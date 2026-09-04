@@ -6,6 +6,12 @@
 
 本项目只有定时渲染与推送进程，不提供 Web 页面，也不开放 HTTP 端口。
 
+## 效果预览
+
+<p align="center">
+  <img src="docs/images/crossmux-airpage-preview.png" alt="CrossMux AirPage 信息页渲染效果" width="528">
+</p>
+
 ## 数据流
 
 ```mermaid
