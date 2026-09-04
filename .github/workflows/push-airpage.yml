@@ -1,0 +1,54 @@
+name: Push AirPage
+
+on:
+  schedule:
+    - cron: "2-59/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airpage-device-push
+  cancel-in-progress: true
+
+jobs:
+  push:
+    if: github.event_name == 'workflow_dispatch' || vars.AIRPAGE_PUSH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install runtime and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          python -m pip install .
+      - name: Render and push
+        env:
+          TZ: ${{ vars.TZ || 'Asia/Shanghai' }}
+          OUTPUT_DIR: ${{ runner.temp }}/airpage
+          WEATHER_LOCATION: ${{ vars.WEATHER_LOCATION || '上海' }}
+          WEATHER_LATITUDE: ${{ vars.WEATHER_LATITUDE || '31.2304' }}
+          WEATHER_LONGITUDE: ${{ vars.WEATHER_LONGITUDE || '121.4737' }}
+          WEATHER_TIMEZONE: ${{ vars.WEATHER_TIMEZONE || 'Asia/Shanghai' }}
+          WEATHER_FORECAST_DAYS: ${{ vars.WEATHER_FORECAST_DAYS || '5' }}
+          MARKET_INDEX_SYMBOL: ${{ vars.MARKET_INDEX_SYMBOL || '000001.SS' }}
+          MARKET_INDEX_LABEL: ${{ vars.MARKET_INDEX_LABEL || '上证指数' }}
+          STOCK_SYMBOLS: ${{ vars.STOCK_SYMBOLS || '601727.SS,600021.SS' }}
+          STOCK_LABELS: ${{ vars.STOCK_LABELS || '上海电气,上海电力' }}
+          STOCK_RANGE: ${{ vars.STOCK_RANGE || '5d' }}
+          STOCK_INTERVAL: ${{ vars.STOCK_INTERVAL || '30m' }}
+          NEWS_API_BASE_URL: ${{ secrets.NEWS_API_BASE_URL }}
+          NEWS_CATEGORY: ${{ vars.NEWS_CATEGORY || 'all' }}
+          NEWS_LABEL: ${{ vars.NEWS_LABEL || '新浪 · 快讯' }}
+          NEWS_ITEMS: ${{ vars.NEWS_ITEMS || '4' }}
+          AIRPAGE_DEVICE_URL: ${{ secrets.AIRPAGE_DEVICE_URL }}
+          AIRPAGE_ENABLED: "true"
+        run: |
+          test -n "$AIRPAGE_DEVICE_URL"
+          python -m app.cli --push --json

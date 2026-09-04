@@ -1,0 +1,66 @@
+name: Deploy Docker host
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish container"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.DOCKER_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      REMOTE_DIR: ${{ vars.DEPLOY_PATH || 'crossmux-airpage' }}
+      IMAGE: ghcr.io/${{ github.repository }}:latest
+      REGISTRY_USER: ${{ github.repository_owner }}
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate deployment settings
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          [[ "$REMOTE_DIR" =~ ^[A-Za-z0-9._/-]+$ ]]
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload compose definition
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p -- '$REMOTE_DIR'"
+          scp docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/docker-compose.yml.next"
+      - name: Authenticate container registry
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io --username '$REGISTRY_USER' --password-stdin"
+      - name: Pull and restart
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$REMOTE_DIR" "$IMAGE" <<'REMOTE'
+          set -euo pipefail
+          remote_dir="$1"
+          image="$2"
+          cd "$remote_dir"
+          test -f .env
+          mv docker-compose.yml.next docker-compose.yml
+          IMAGE="$image" docker compose pull
+          IMAGE="$image" docker compose up -d --remove-orphans
+          docker compose ps
+          REMOTE

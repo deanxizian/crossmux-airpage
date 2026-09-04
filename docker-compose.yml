@@ -1,0 +1,24 @@
+name: crossmux-airpage
+
+services:
+  airpage:
+    image: ${IMAGE:-crossmux-airpage:local}
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      OUTPUT_DIR: /data
+    volumes:
+      - airpage-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  airpage-data:

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crossmux-airpage"
+version = "0.1.0"
+description = "A four-gray information page for CrossMux AirPage devices"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "APScheduler>=3.10,<4",
+  "httpx>=0.27,<1",
+  "Pillow>=10.4,<13",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+crossmux-airpage = "app.cli:main"
+
+[project.urls]
+Repository = "https://github.com/deanxizian/crossmux-airpage"
+Issues = "https://github.com/deanxizian/crossmux-airpage/issues"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
