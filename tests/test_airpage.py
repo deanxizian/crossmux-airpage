@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 
-from app.airpage import AirPageError, parse_device_url
+from app.airpage import AirPageDevice, AirPageError, parse_device_url, push_bmp
 
 
 def test_parse_x3_device_url() -> None:
@@ -33,3 +34,34 @@ def test_rejects_untrusted_airpage_host() -> None:
 def test_rejects_incomplete_or_insecure_device_url(url: str) -> None:
     with pytest.raises(AirPageError):
         parse_device_url(url, ("airpage.crossmux.cn",))
+
+
+def test_push_does_not_follow_cross_origin_redirects() -> None:
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            307,
+            headers={"Location": "https://evil.example/collect"},
+            request=request,
+        )
+
+    device = AirPageDevice(
+        origin="https://airpage.crossmux.cn",
+        device_id="Abcdefghijk_1234",
+        width=528,
+        height=792,
+    )
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(handler),
+            follow_redirects=True,
+        ) as client,
+        pytest.raises(AirPageError, match="HTTP 307"),
+    ):
+        push_bmp(client, device, b"test")
+
+    assert requested_urls == [
+        "https://airpage.crossmux.cn/api/device/Abcdefghijk_1234/push"
+    ]

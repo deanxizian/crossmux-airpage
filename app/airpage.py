@@ -78,12 +78,14 @@ def push_bmp(
         response = client.post(
             f"{device.origin}/api/device/{device.device_id}/push",
             files=files,
+            follow_redirects=False,
         )
         manual_refresh = False
         if response.status_code == 404:
             response = client.post(
                 f"{device.origin}/api/device/{device.device_id}/image",
                 files=files,
+                follow_redirects=False,
             )
             manual_refresh = True
     except httpx.RequestError as exc:
