@@ -32,6 +32,10 @@ jobs:
         env:
           TZ: ${{ vars.TZ || 'Asia/Shanghai' }}
           OUTPUT_DIR: ${{ runner.temp }}/airpage
+          AIRPAGE_WIDTH: ${{ vars.AIRPAGE_WIDTH || '528' }}
+          AIRPAGE_HEIGHT: ${{ vars.AIRPAGE_HEIGHT || '792' }}
+          REQUEST_TIMEOUT_SECONDS: ${{ vars.REQUEST_TIMEOUT_SECONDS || '20' }}
+          AIRPAGE_TRUSTED_HOSTS: ${{ vars.AIRPAGE_TRUSTED_HOSTS || 'airpage.crossmux.cn,airpage.crossmux.com,airpage.yunhug.com' }}
           WEATHER_LOCATION: ${{ vars.WEATHER_LOCATION || '上海' }}
           WEATHER_LATITUDE: ${{ vars.WEATHER_LATITUDE || '31.2304' }}
           WEATHER_LONGITUDE: ${{ vars.WEATHER_LONGITUDE || '121.4737' }}
