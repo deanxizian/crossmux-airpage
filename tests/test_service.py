@@ -376,3 +376,18 @@ def test_repeated_symbols_keep_each_rows_explicit_name(setup) -> None:
     )
     page = collect(service)
     assert [stock.label for stock in page.stocks] == ["指数", "同代码自选"]
+
+
+def test_poll_windows_tolerate_scheduler_startup_jitter(setup) -> None:
+    service, api, clock = setup
+    clock.advance(0.8)
+    collect(service)
+    clock.advance(59.4)  # next minute, slightly less than 60 seconds since first fetch
+    collect(service)
+    assert api.calls == {"weather": 1, "stock": 6, "news": 1}
+    clock.advance(0.1)
+    collect(service)
+    assert api.calls == {"weather": 1, "stock": 6, "news": 1}
+    clock.advance(59.9)
+    collect(service)
+    assert api.calls == {"weather": 1, "stock": 9, "news": 2}

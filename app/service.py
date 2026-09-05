@@ -141,6 +141,7 @@ class AirPageService:
         delay = min(source.refresh, source.max_age)
         if entry.failures:
             delay = min(300, 15 * 2 ** min(entry.failures, 5))
+            return (now - entry.last_attempt_at).total_seconds() >= delay
         elif isinstance(entry.snapshot, WeatherSnapshot):
             fetched = entry.snapshot.info.fetched_at
             zone = ZoneInfo(self.settings.weather_timezone)
@@ -149,7 +150,11 @@ class AirPageService:
                 or fetched.astimezone(zone).date() != now.astimezone(zone).date()
             ):
                 return True
-        return (now - entry.last_attempt_at).total_seconds() >= delay
+        # Scheduler/client startup jitter must not turn a 60-second source into a
+        # 120-second source. Successful polls run once per wall-clock time window.
+        return int(now.timestamp() // delay) > int(
+            entry.last_attempt_at.timestamp() // delay
+        )
 
     def _view(self, source: Source, entry: CacheEntry, now: datetime) -> Snapshot:
         snapshot = entry.snapshot
