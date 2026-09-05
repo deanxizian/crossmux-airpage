@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -11,6 +12,7 @@ from app.service import AirPageService
 def main() -> int:
     settings = Settings.from_env()
     service = AirPageService(settings)
+    service.start_worker()
     scheduler = BlockingScheduler(timezone=settings.timezone)
     scheduler.add_job(
         service.safe_scheduled_run,
@@ -33,12 +35,8 @@ def main() -> int:
     )
     if settings.airpage_push_on_start:
         service.safe_scheduled_run()
-    try:
+    with suppress(KeyboardInterrupt, SystemExit):
         scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        pass
-    finally:
-        service.close()
     return 0
 
 

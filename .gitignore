@@ -12,3 +12,5 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 data/
+.deployment
+.deployment.next

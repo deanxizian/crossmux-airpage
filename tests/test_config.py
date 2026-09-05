@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.config import Settings
 
 
@@ -38,3 +40,30 @@ def test_news_items_is_limited_to_screen_capacity() -> None:
 def test_push_interval_has_one_minute_floor() -> None:
     settings = Settings.from_env({"AIRPAGE_PUSH_INTERVAL_MINUTES": "0"})
     assert settings.airpage_push_interval_minutes == 1
+
+
+def test_custom_symbols_do_not_inherit_unrelated_names() -> None:
+    settings = Settings.from_env(
+        {"MARKET_INDEX_SYMBOL": "000300.SS", "STOCK_SYMBOLS": "600519.SS,000001.SZ"}
+    )
+    assert settings.stock_labels == settings.stock_symbols
+
+
+@pytest.mark.parametrize(
+    "labels,expected",
+    [
+        ("茅台", ("茅台", "000001.SZ")),
+        (",平安银行", ("600519.SS", "平安银行")),
+        ("", ("600519.SS", "000001.SZ")),
+    ],
+)
+def test_partial_labels_keep_their_symbol_positions(labels, expected) -> None:
+    settings = Settings.from_env(
+        {"STOCK_SYMBOLS": "600519.SS,000001.SZ", "STOCK_LABELS": labels}
+    )
+    assert settings.stock_labels[1:] == expected
+
+
+def test_reordered_known_symbols_keep_their_names() -> None:
+    settings = Settings.from_env({"STOCK_SYMBOLS": "600021.SS,601727.SS"})
+    assert settings.stock_labels[1:] == ("上海电力", "上海电气")

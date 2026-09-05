@@ -70,19 +70,19 @@ def parse_device_url(
     return AirPageDevice(origin=origin, device_id=device_id, width=width, height=height)
 
 
-def push_bmp(
-    client: httpx.Client, device: AirPageDevice, bmp: bytes
+async def push_bmp(
+    client: httpx.AsyncClient, device: AirPageDevice, bmp: bytes
 ) -> dict[str, object]:
     files = {"image": ("airpage.bmp", bmp, "image/bmp")}
     try:
-        response = client.post(
+        response = await client.post(
             f"{device.origin}/api/device/{device.device_id}/push",
             files=files,
             follow_redirects=False,
         )
         manual_refresh = False
         if response.status_code == 404:
-            response = client.post(
+            response = await client.post(
                 f"{device.origin}/api/device/{device.device_id}/image",
                 files=files,
                 follow_redirects=False,
@@ -96,17 +96,27 @@ def push_bmp(
         raise AirPageError(f"AirPage 推送失败（HTTP {response.status_code}）") from exc
     try:
         payload = response.json()
-    except ValueError:
-        payload = {}
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise AirPageError("AirPage 返回的不是有效 JSON") from exc
     if not isinstance(payload, dict):
-        payload = {}
-    if payload.get("refreshed") is False:
-        manual_refresh = True
+        raise AirPageError("AirPage 响应必须是 JSON 对象")
+    if payload.get("ok") is False:
+        raise AirPageError("AirPage 服务端拒绝了上传")
+    if payload.get("ok") is not True:
+        raise AirPageError("AirPage 响应缺少有效的成功标志")
+    uploaded_bytes = payload.get("bytes")
+    if type(uploaded_bytes) is not int or uploaded_bytes != len(bmp):
+        raise AirPageError("AirPage 返回的上传大小与图片不一致")
+    if not manual_refresh and type(payload.get("refreshed")) is not bool:
+        raise AirPageError("AirPage 响应缺少有效的刷新通知状态")
+    refresh_requested = not manual_refresh and payload["refreshed"]
     return {
-        "ok": bool(payload.get("ok", True)),
-        "bytes": int(payload.get("bytes", len(bmp))),
-        "refreshed": bool(payload.get("refreshed", not manual_refresh)),
-        "manual_refresh": manual_refresh,
+        "ok": True,
+        "uploaded": True,
+        "bytes": uploaded_bytes,
+        "refresh_requested": refresh_requested,
+        "display_updated": None,
+        "manual_refresh": not refresh_requested,
         "http_status": response.status_code,
         "device": device.masked_id,
     }

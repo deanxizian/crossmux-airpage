@@ -7,7 +7,8 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.models import NewsItem, NewsSnapshot
+from app.models import NewsItem, NewsSnapshot, SnapshotInfo
+from app.validation import timestamp
 
 NEWS_ACCEPT = "application/json"
 SPACE_RE = re.compile(r"\s+")
@@ -44,7 +45,9 @@ def _parse_payload(payload: dict[str, Any], limit: int) -> list[NewsItem]:
         if fingerprint in seen:
             continue
         seen.add(fingerprint)
-        items.append(NewsItem(title=title))
+        items.append(
+            NewsItem(title=title, published_at=timestamp(raw_item.get("published_at")))
+        )
         if len(items) >= limit:
             break
     if not items:
@@ -57,10 +60,10 @@ def _latest_url(base_url: str) -> str:
     return normalized if normalized.endswith("/latest") else f"{normalized}/latest"
 
 
-def fetch_news(settings: Settings, client: httpx.Client) -> NewsSnapshot:
+async def fetch_news(settings: Settings, client: httpx.AsyncClient) -> NewsSnapshot:
     if not settings.news_api_base_url:
         return unavailable_news(settings)
-    response = client.get(
+    response = await client.get(
         _latest_url(settings.news_api_base_url),
         params={"category": settings.news_category, "limit": settings.news_items},
         headers={
@@ -76,7 +79,19 @@ def fetch_news(settings: Settings, client: httpx.Client) -> NewsSnapshot:
     if not isinstance(payload, dict):
         raise TypeError("新闻 API 返回格式无效")
     items = _parse_payload(payload, settings.news_items)
-    return NewsSnapshot(label=settings.news_label, items=items, available=True)
+    stale = payload.get("stale", False)
+    if not isinstance(stale, bool):
+        raise TypeError("新闻 stale 必须是布尔值")
+    published = [item.published_at for item in items if item.published_at is not None]
+    return NewsSnapshot(
+        label=settings.news_label,
+        items=items,
+        available=True,
+        info=SnapshotInfo(
+            data_at=max(published) if published else None,
+            state="stale" if stale else "fresh",
+        ),
+    )
 
 
 def unavailable_news(settings: Settings) -> NewsSnapshot:

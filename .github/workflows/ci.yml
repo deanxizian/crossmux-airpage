@@ -4,10 +4,20 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy the tested main commit to the Docker host"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -33,6 +43,34 @@ jobs:
           OUTPUT_DIR: data
           AIRPAGE_ENABLED: "false"
           NEWS_API_BASE_URL: ""
-        run: python -m app.cli --json
+        run: python -m app.cli --demo --json
       - name: Build container
         run: docker build -t crossmux-airpage:test .
+      - name: Smoke-test container offline
+        run: docker run --rm --network none crossmux-airpage:test python -m app.cli --demo --json
+
+  publish:
+    needs: test
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      revision: ${{ github.sha }}
+
+  deploy:
+    needs: [test, publish]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (vars.DOCKER_DEPLOY_ENABLED == 'true' || inputs.deploy == true)
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      revision: ${{ github.sha }}
+      image: ${{ needs.publish.outputs.image }}
+    secrets: inherit

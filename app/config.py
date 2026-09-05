@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -36,7 +37,8 @@ def _int(value: str | None, default: int, minimum: int, maximum: int) -> int:
 
 def _float(value: str | None, default: float) -> float:
     try:
-        return float(value) if value is not None else default
+        result = float(value) if value is not None else default
+        return result if math.isfinite(result) else default
     except ValueError:
         return default
 
@@ -75,6 +77,14 @@ class Settings:
     request_timeout_seconds: float
     font_sans_path: str | None
     font_mono_path: str | None
+    weather_refresh_seconds: int
+    stock_refresh_seconds: int
+    news_refresh_seconds: int
+    weather_max_age_seconds: int
+    stock_max_age_seconds: int
+    news_max_age_seconds: int
+    collection_timeout_seconds: int
+    push_timeout_seconds: int
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -86,11 +96,20 @@ class Settings:
         index_symbol = (
             env.get("MARKET_INDEX_SYMBOL", "000001.SS").strip() or "000001.SS"
         )
-        index_label = env.get("MARKET_INDEX_LABEL", "上证指数").strip() or "上证指数"
+        known_labels = dict(
+            zip(DEFAULT_STOCK_SYMBOLS, DEFAULT_STOCK_LABELS, strict=True)
+        )
+        known_labels["000001.SS"] = "上证指数"
+        index_label = env.get("MARKET_INDEX_LABEL", "").strip() or known_labels.get(
+            index_symbol, index_symbol
+        )
         watch_symbols = _csv(env.get("STOCK_SYMBOLS"), DEFAULT_STOCK_SYMBOLS)[:2]
-        watch_labels = _csv(env.get("STOCK_LABELS"), DEFAULT_STOCK_LABELS)
-        if len(watch_labels) < len(watch_symbols):
-            watch_labels = watch_labels + watch_symbols[len(watch_labels) :]
+        explicit_labels = env.get("STOCK_LABELS", "").split(",")
+        watch_labels = tuple(
+            (explicit_labels[index].strip() if index < len(explicit_labels) else "")
+            or known_labels.get(symbol, symbol)
+            for index, symbol in enumerate(watch_symbols)
+        )
         symbols = (index_symbol, *watch_symbols)
         labels = (index_label, *watch_labels[: len(watch_symbols)])
         return cls(
@@ -131,7 +150,25 @@ class Settings:
             airpage_trusted_hosts=_csv(
                 env.get("AIRPAGE_TRUSTED_HOSTS"), DEFAULT_TRUSTED_HOSTS
             ),
-            request_timeout_seconds=_float(env.get("REQUEST_TIMEOUT_SECONDS"), 20.0),
+            request_timeout_seconds=max(
+                0.1, _float(env.get("REQUEST_TIMEOUT_SECONDS"), 20.0)
+            ),
             font_sans_path=env.get("FONT_SANS_PATH") or None,
             font_mono_path=env.get("FONT_MONO_PATH") or None,
+            weather_refresh_seconds=_int(
+                env.get("WEATHER_REFRESH_SECONDS"), 1800, 1, 86400
+            ),
+            stock_refresh_seconds=_int(env.get("STOCK_REFRESH_SECONDS"), 60, 1, 86400),
+            news_refresh_seconds=_int(env.get("NEWS_REFRESH_SECONDS"), 120, 1, 86400),
+            weather_max_age_seconds=_int(
+                env.get("WEATHER_MAX_AGE_SECONDS"), 21600, 1, 604800
+            ),
+            stock_max_age_seconds=_int(
+                env.get("STOCK_MAX_AGE_SECONDS"), 900, 1, 604800
+            ),
+            news_max_age_seconds=_int(env.get("NEWS_MAX_AGE_SECONDS"), 1800, 1, 604800),
+            collection_timeout_seconds=_int(
+                env.get("COLLECTION_TIMEOUT_SECONDS"), 25, 1, 300
+            ),
+            push_timeout_seconds=_int(env.get("PUSH_TIMEOUT_SECONDS"), 20, 1, 300),
         )

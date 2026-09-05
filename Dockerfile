@@ -21,6 +21,6 @@ USER app
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=1m --timeout=5s --start-period=6m --retries=3 \
-  CMD python -c "from pathlib import Path; raise SystemExit(0 if (Path('/data/airpage.bmp').is_file() and Path('/data/airpage.bmp').stat().st_size > 0) else 1)"
+  CMD python -m app.healthcheck
 
 CMD ["python", "-m", "app.worker"]

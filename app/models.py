@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Literal
+
+
+@dataclass(slots=True)
+class SnapshotInfo:
+    fetched_at: datetime | None = None
+    data_at: datetime | None = None
+    state: Literal["fresh", "stale", "unavailable"] = "unavailable"
+    error: str | None = None
 
 
 @dataclass(slots=True)
@@ -19,6 +28,7 @@ class WeatherSnapshot:
     location: str
     forecasts: list[ForecastDay] = field(default_factory=list)
     available: bool = False
+    info: SnapshotInfo = field(default_factory=SnapshotInfo)
 
 
 @dataclass(slots=True)
@@ -29,11 +39,13 @@ class StockSnapshot:
     change_percent: float | None = None
     points: list[float] = field(default_factory=list)
     available: bool = False
+    info: SnapshotInfo = field(default_factory=SnapshotInfo)
 
 
 @dataclass(slots=True)
 class NewsItem:
     title: str
+    published_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -41,6 +53,7 @@ class NewsSnapshot:
     label: str
     items: list[NewsItem] = field(default_factory=list)
     available: bool = False
+    info: SnapshotInfo = field(default_factory=SnapshotInfo)
 
 
 @dataclass(slots=True)
