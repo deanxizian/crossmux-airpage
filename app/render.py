@@ -209,11 +209,16 @@ def _draw_forecast(
     forecast_days: int,
     today: date,
 ) -> None:
-    draw.text(
-        (20, 102),
+    _section_title(
+        draw,
+        fonts,
         f"{weather.location} · {forecast_days}日",
-        font=fonts.sans(22),
-        fill=BLACK,
+        102,
+        "暂无"
+        if not weather.available
+        else "缓存"
+        if weather.info.state == "stale"
+        else "",
     )
     forecasts = weather.forecasts[:forecast_days]
     if not forecasts:
@@ -296,7 +301,17 @@ def _format_price(stock: StockSnapshot) -> str:
 def _draw_market(
     draw: ImageDraw.ImageDraw, fonts: FontBook, stocks: list[StockSnapshot]
 ) -> None:
-    draw.text((20, 572), "A股 · 自选", font=fonts.sans(22), fill=BLACK)
+    stale = sum(stock.info.state == "stale" for stock in stocks)
+    unavailable = sum(not stock.available for stock in stocks)
+    notice = " · ".join(
+        text
+        for text in (
+            f"{stale}项缓存" if stale else "",
+            f"{unavailable}项暂无" if unavailable else "",
+        )
+        if text
+    )
+    _section_title(draw, fonts, "A股 · 自选", 572, notice)
     rows = (633, 695, 757)
     normalized = stocks[:3]
     while len(normalized) < 3:
@@ -348,12 +363,12 @@ def _fit_text(
 
 
 def _draw_news(draw: ImageDraw.ImageDraw, fonts: FontBook, news: NewsSnapshot) -> None:
-    title_font = fonts.sans(21)
-    draw.text(
-        (20, 337),
-        _fit_text(draw, news.label, title_font, 488),
-        font=title_font,
-        fill=BLACK,
+    _section_title(
+        draw,
+        fonts,
+        news.label,
+        337,
+        "暂无" if not news.available else "缓存" if news.info.state == "stale" else "",
     )
     if not news.items:
         draw.text(
@@ -370,6 +385,20 @@ def _draw_news(draw: ImageDraw.ImageDraw, fonts: FontBook, news: NewsSnapshot) -
         draw.text((32, y), headline, font=headline_font, fill=BLACK, anchor="lm")
         if index < len(visible_items) - 1:
             draw.line((32, y + 22, 508, y + 22), fill=LIGHT, width=1)
+
+
+def _section_title(
+    draw: ImageDraw.ImageDraw, fonts: FontBook, title: str, y: int, notice: str
+) -> None:
+    notice_width = _text_width(draw, notice, fonts.sans(12)) + 16 if notice else 0
+    draw.text(
+        (20, y),
+        _fit_text(draw, title, fonts.sans(21), 488 - notice_width),
+        font=fonts.sans(21),
+        fill=BLACK,
+    )
+    if notice:
+        draw.text((508, y + 13), notice, font=fonts.sans(12), fill=DARK, anchor="rm")
 
 
 def render_page(data: PageData, settings: Settings) -> Image.Image:

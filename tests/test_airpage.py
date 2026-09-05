@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -53,15 +55,92 @@ def test_push_does_not_follow_cross_origin_redirects() -> None:
         width=528,
         height=792,
     )
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(handler),
-            follow_redirects=True,
-        ) as client,
-        pytest.raises(AirPageError, match="HTTP 307"),
-    ):
-        push_bmp(client, device, b"test")
+
+    async def send() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=True
+        ) as client:
+            await push_bmp(client, device, b"test")
+
+    with pytest.raises(AirPageError, match="HTTP 307"):
+        asyncio.run(send())
 
     assert requested_urls == [
         "https://airpage.crossmux.cn/api/device/Abcdefghijk_1234/push"
     ]
+
+
+def send_response(response: httpx.Response):
+    async def send():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: response)
+        ) as client:
+            return await push_bmp(
+                client,
+                AirPageDevice(
+                    "https://airpage.example.invalid", "0123456789abcdef", 528, 792
+                ),
+                b"test",
+            )
+
+    return asyncio.run(send())
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"ok": False}),
+        httpx.Response(200, text="<html>error</html>"),
+        httpx.Response(200, json=[]),
+        httpx.Response(200, json={}),
+        httpx.Response(200, json={"ok": "false", "bytes": 4, "refreshed": True}),
+        httpx.Response(200, json={"ok": True, "bytes": 4, "refreshed": "false"}),
+        httpx.Response(200, json={"ok": True, "bytes": 4}),
+        httpx.Response(200, json={"ok": True, "bytes": True, "refreshed": True}),
+        httpx.Response(200, json={"ok": True, "bytes": 3, "refreshed": True}),
+        httpx.Response(500, json={"ok": False}),
+    ],
+)
+def test_rejects_business_failure_and_malformed_success(response) -> None:
+    with pytest.raises(AirPageError):
+        send_response(response)
+
+
+@pytest.mark.parametrize("refresh", [True, False])
+def test_upload_and_refresh_are_separate(refresh) -> None:
+    result = send_response(
+        httpx.Response(200, json={"ok": True, "bytes": 4, "refreshed": refresh})
+    )
+    assert result["uploaded"] is True
+    assert result["refresh_requested"] is refresh
+    assert result["manual_refresh"] is not refresh
+    assert result["display_updated"] is None
+
+
+def test_404_retries_once_and_requires_manual_refresh() -> None:
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return (
+            httpx.Response(404)
+            if request.url.path.endswith("/push")
+            else httpx.Response(200, json={"ok": True, "bytes": 4})
+        )
+
+    async def send():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await push_bmp(
+                client,
+                AirPageDevice(
+                    "https://airpage.example.invalid", "0123456789abcdef", 528, 792
+                ),
+                b"test",
+            )
+
+    result = asyncio.run(send())
+    assert len(requests) == 2
+    assert requests[1].url.path.endswith("/image")
+    assert b"test" in requests[0].content and b"test" in requests[1].content
+    assert result["uploaded"] and result["manual_refresh"]
+    assert not result["refresh_requested"]

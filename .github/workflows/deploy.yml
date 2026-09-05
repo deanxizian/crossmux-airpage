@@ -1,66 +1,108 @@
 name: Deploy Docker host
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: ["Publish container"]
-    types: [completed]
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      image:
+        required: true
+        type: string
+    secrets:
+      DEPLOY_HOST:
+        required: true
+      DEPLOY_USER:
+        required: true
+      DEPLOY_SSH_KEY:
+        required: true
+      DEPLOY_KNOWN_HOSTS:
+        required: true
 
 permissions:
   contents: read
   packages: read
 
+concurrency:
+  group: production-docker-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (vars.DOCKER_DEPLOY_ENABLED == 'true' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-      REMOTE_DIR: ${{ vars.DEPLOY_PATH || 'crossmux-airpage' }}
-      IMAGE: ghcr.io/${{ github.repository }}:latest
+      REMOTE_DIR: ${{ vars.DEPLOY_PATH || '/opt/crossmux-airpage' }}
+      IMAGE: ${{ inputs.image }}
+      REVISION: ${{ inputs.revision }}
       REGISTRY_USER: ${{ github.repository_owner }}
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
       - name: Validate deployment settings
         run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[A-Za-z0-9_-]+$ ]]
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
-          [[ "$REMOTE_DIR" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$REMOTE_DIR" =~ ^(/[A-Za-z0-9._-]+)+$ ]]
+          [[ "$REMOTE_DIR/" != *'/../'* && "$REMOTE_DIR/" != *'/./'* ]]
+          [[ "$IMAGE" =~ ^ghcr.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
       - name: Configure SSH
         run: |
           install -m 700 -d ~/.ssh
           install -m 600 /dev/null ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Upload compose definition
+      - name: Upload matching compose definition
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p -- '$REMOTE_DIR'"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "test -f '$REMOTE_DIR/.env'"
           scp docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/docker-compose.yml.next"
+      - id: registry
+        name: Create temporary registry configuration
+        run: |
+          registry_dir=$(ssh "$DEPLOY_USER@$DEPLOY_HOST" 'mktemp -d /tmp/crossmux-airpage-registry.XXXXXX')
+          [[ "$registry_dir" =~ ^/tmp/crossmux-airpage-registry\.[A-Za-z0-9]+$ ]]
+          printf 'directory=%s\n' "$registry_dir" >> "$GITHUB_OUTPUT"
       - name: Authenticate container registry
+        env:
+          REGISTRY_DIR: ${{ steps.registry.outputs.directory }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "docker login ghcr.io --username '$REGISTRY_USER' --password-stdin"
-      - name: Pull and restart
+            "docker --config '$REGISTRY_DIR' login ghcr.io --username '$REGISTRY_USER' --password-stdin"
+      - name: Deploy and verify upload
+        env:
+          REGISTRY_DIR: ${{ steps.registry.outputs.directory }}
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$REMOTE_DIR" "$IMAGE" <<'REMOTE'
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$REMOTE_DIR" "$IMAGE" "$REVISION" "$REGISTRY_DIR" <<'REMOTE'
           set -euo pipefail
           remote_dir="$1"
           image="$2"
+          revision="$3"
+          registry_dir="$4"
           cd "$remote_dir"
-          test -f .env
+          docker --config "$registry_dir" pull "$image"
+          actual_revision=$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          test "$actual_revision" = "$revision"
           mv docker-compose.yml.next docker-compose.yml
-          IMAGE="$image" docker compose pull
-          IMAGE="$image" docker compose up -d --remove-orphans
-          docker compose ps
+          IMAGE="$image" docker --config "$registry_dir" compose up -d --no-build --wait --wait-timeout 180
+          IMAGE="$image" docker compose exec -T airpage python -m app.healthcheck --require-upload
+          printf 'revision=%s\nimage=%s\n' "$revision" "$image" > .deployment.next
+          mv .deployment.next .deployment
+          IMAGE="$image" docker compose ps
           REMOTE
+      - name: Remove temporary registry credentials
+        if: always() && steps.registry.outputs.directory != ''
+        env:
+          REGISTRY_DIR: ${{ steps.registry.outputs.directory }}
+        run: |
+          [[ "$REGISTRY_DIR" =~ ^/tmp/crossmux-airpage-registry\.[A-Za-z0-9]+$ ]]
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "rm -f -- '$REGISTRY_DIR/config.json'; rmdir -- '$REGISTRY_DIR'"

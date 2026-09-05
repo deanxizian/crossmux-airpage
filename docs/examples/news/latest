@@ -1,0 +1,10 @@
+{
+  "source": "offline_example",
+  "stale": true,
+  "items": [
+    {"content": "【离线示例】城市图书馆延长周末开放时间", "published_at": "2026-09-05T01:00:00Z"},
+    {"content": "社区公园新增步行路线和休息座椅", "published_at": "2026-09-05T00:59:00Z"},
+    {"content": "本地科技展将展示节能与环保新技术", "published_at": "2026-09-05T00:58:00Z"},
+    {"content": "周末阅读活动开放预约，欢迎市民参加", "published_at": "2026-09-05T00:57:00Z"}
+  ]
+}

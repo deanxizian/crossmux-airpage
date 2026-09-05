@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.config import Settings
-from app.models import ForecastDay, WeatherSnapshot
+from app.models import ForecastDay, SnapshotInfo, WeatherSnapshot
+from app.validation import integer, number
 
 WEATHER_DESCRIPTIONS = {
     0: "晴",
@@ -41,13 +43,19 @@ WEATHER_DESCRIPTIONS = {
 
 def _daily_value(daily: dict[str, object], key: str, index: int) -> object | None:
     values = daily.get(key)
-    if not isinstance(values, list) or index >= len(values):
+    if values is None:
+        return None
+    if not isinstance(values, list):
+        raise TypeError("Open-Meteo 每日字段必须是数组")
+    if index >= len(values):
         return None
     return values[index]
 
 
-def fetch_weather(settings: Settings, client: httpx.Client) -> WeatherSnapshot:
-    response = client.get(
+async def fetch_weather(
+    settings: Settings, client: httpx.AsyncClient
+) -> WeatherSnapshot:
+    response = await client.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
             "latitude": settings.weather_latitude,
@@ -69,28 +77,51 @@ def fetch_weather(settings: Settings, client: httpx.Client) -> WeatherSnapshot:
         raise TypeError("Open-Meteo 响应缺少 daily")
     forecast: list[ForecastDay] = []
     dates = daily.get("time") or []
+    if not isinstance(dates, list):
+        raise TypeError("Open-Meteo 日期必须是数组")
+    seen: set[date] = set()
     for index, raw_date in enumerate(dates[: settings.weather_forecast_days]):
         try:
             forecast_date = date.fromisoformat(str(raw_date))
         except ValueError:
             continue
-        forecast_code = _daily_value(daily, "weather_code", index)
+        if forecast_date in seen:
+            continue
+        seen.add(forecast_date)
+        forecast_code = integer(_daily_value(daily, "weather_code", index), 0, 99)
+        high = number(_daily_value(daily, "temperature_2m_max", index))
+        low = number(_daily_value(daily, "temperature_2m_min", index))
+        precipitation = integer(
+            _daily_value(daily, "precipitation_probability_max", index), 0, 100
+        )
+        if all(value is None for value in (forecast_code, high, low, precipitation)):
+            continue
+        if high is not None and low is not None and high < low:
+            raise ValueError("最高温低于最低温")
         forecast.append(
             ForecastDay(
                 date=forecast_date,
-                high=_daily_value(daily, "temperature_2m_max", index),
-                low=_daily_value(daily, "temperature_2m_min", index),
-                precipitation_probability=_daily_value(
-                    daily, "precipitation_probability_max", index
-                ),
+                high=high,
+                low=low,
+                precipitation_probability=precipitation,
                 weather_code=forecast_code,
                 description=WEATHER_DESCRIPTIONS.get(forecast_code, "未知"),
             )
         )
+    if not forecast:
+        raise ValueError("Open-Meteo 没有可用预报")
     return WeatherSnapshot(
         location=settings.weather_location,
         forecasts=forecast,
         available=True,
+        info=SnapshotInfo(
+            data_at=datetime.combine(
+                min(day.date for day in forecast),
+                time.min,
+                ZoneInfo(settings.weather_timezone),
+            ),
+            state="fresh",
+        ),
     )
 
 

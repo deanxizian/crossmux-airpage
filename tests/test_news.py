@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from app.providers.news import fetch_news
 
 
@@ -25,7 +27,7 @@ class StubResponse:
 
 
 class StubClient:
-    def get(
+    async def get(
         self,
         url: str,
         params: dict[str, object],
@@ -46,7 +48,7 @@ def test_fetch_news_reads_sina_compatible_api_and_extracts_headlines(settings) -
             "NEWS_ITEMS": "3",
         }
     )
-    news = fetch_news(settings, StubClient())  # type: ignore[arg-type]
+    news = asyncio.run(fetch_news(settings, StubClient()))  # type: ignore[arg-type]
 
     assert news.available
     assert news.label == "新浪快讯"

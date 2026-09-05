@@ -42,11 +42,19 @@ jobs:
           WEATHER_TIMEZONE: ${{ vars.WEATHER_TIMEZONE || 'Asia/Shanghai' }}
           WEATHER_FORECAST_DAYS: ${{ vars.WEATHER_FORECAST_DAYS || '5' }}
           MARKET_INDEX_SYMBOL: ${{ vars.MARKET_INDEX_SYMBOL || '000001.SS' }}
-          MARKET_INDEX_LABEL: ${{ vars.MARKET_INDEX_LABEL || '上证指数' }}
+          MARKET_INDEX_LABEL: ${{ vars.MARKET_INDEX_LABEL }}
           STOCK_SYMBOLS: ${{ vars.STOCK_SYMBOLS || '601727.SS,600021.SS' }}
-          STOCK_LABELS: ${{ vars.STOCK_LABELS || '上海电气,上海电力' }}
+          STOCK_LABELS: ${{ vars.STOCK_LABELS }}
           STOCK_RANGE: ${{ vars.STOCK_RANGE || '5d' }}
           STOCK_INTERVAL: ${{ vars.STOCK_INTERVAL || '30m' }}
+          WEATHER_REFRESH_SECONDS: ${{ vars.WEATHER_REFRESH_SECONDS || '1800' }}
+          WEATHER_MAX_AGE_SECONDS: ${{ vars.WEATHER_MAX_AGE_SECONDS || '21600' }}
+          STOCK_REFRESH_SECONDS: ${{ vars.STOCK_REFRESH_SECONDS || '60' }}
+          STOCK_MAX_AGE_SECONDS: ${{ vars.STOCK_MAX_AGE_SECONDS || '900' }}
+          NEWS_REFRESH_SECONDS: ${{ vars.NEWS_REFRESH_SECONDS || '120' }}
+          NEWS_MAX_AGE_SECONDS: ${{ vars.NEWS_MAX_AGE_SECONDS || '1800' }}
+          COLLECTION_TIMEOUT_SECONDS: ${{ vars.COLLECTION_TIMEOUT_SECONDS || '25' }}
+          PUSH_TIMEOUT_SECONDS: ${{ vars.PUSH_TIMEOUT_SECONDS || '20' }}
           NEWS_API_BASE_URL: ${{ secrets.NEWS_API_BASE_URL }}
           NEWS_CATEGORY: ${{ vars.NEWS_CATEGORY || 'all' }}
           NEWS_LABEL: ${{ vars.NEWS_LABEL || '新浪 · 快讯' }}

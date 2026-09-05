@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from app.providers.weather import fetch_weather
 
 
@@ -30,14 +32,14 @@ class StubClient:
     def __init__(self) -> None:
         self.params: dict[str, object] = {}
 
-    def get(self, _url: str, params: dict[str, object]) -> StubResponse:
+    async def get(self, _url: str, params: dict[str, object]) -> StubResponse:
         self.params = params
         return StubResponse()
 
 
 def test_fetch_weather_keeps_today_and_next_four_days(settings) -> None:
     client = StubClient()
-    weather = fetch_weather(settings, client)  # type: ignore[arg-type]
+    weather = asyncio.run(fetch_weather(settings, client))  # type: ignore[arg-type]
 
     assert client.params["forecast_days"] == 5
     assert len(weather.forecasts) == 5

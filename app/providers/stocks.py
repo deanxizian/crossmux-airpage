@@ -5,15 +5,16 @@ from urllib.parse import quote
 import httpx
 
 from app.config import Settings
-from app.models import StockSnapshot
+from app.models import SnapshotInfo, StockSnapshot
+from app.validation import epoch_timestamp, number
 
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 
-def fetch_stock(
-    settings: Settings, client: httpx.Client, symbol: str, label: str
+async def fetch_stock(
+    settings: Settings, client: httpx.AsyncClient, symbol: str, label: str
 ) -> StockSnapshot:
-    response = client.get(
+    response = await client.get(
         YAHOO_CHART_URL.format(symbol=quote(symbol, safe="")),
         params={"range": settings.stock_range, "interval": settings.stock_interval},
         headers={"User-Agent": "Mozilla/5.0 (CrossMux AirPage/0.1)"},
@@ -24,21 +25,29 @@ def fetch_stock(
         raise ValueError(f"no chart result for {symbol}")
     meta = result.get("meta") or {}
     quote_data = (((result.get("indicators") or {}).get("quote")) or [{}])[0]
-    points = [
-        float(value) for value in quote_data.get("close") or [] if value is not None
-    ]
-    price = meta.get("regularMarketPrice")
-    previous = meta.get("previousClose") or meta.get("chartPreviousClose")
-    change = meta.get("regularMarketChangePercent")
+    raw_points = quote_data.get("close") or []
+    if not isinstance(raw_points, list):
+        raise TypeError("行情 close 必须是数组")
+    points = [value for raw in raw_points if (value := number(raw)) is not None]
+    price = number(meta.get("regularMarketPrice"))
+    previous = number(meta.get("previousClose")) or number(
+        meta.get("chartPreviousClose")
+    )
+    change = number(meta.get("regularMarketChangePercent"))
     if change is None and price is not None and previous:
-        change = (float(price) - float(previous)) / float(previous) * 100
+        change = number((price - previous) / previous * 100)
+    if price is None and not points:
+        raise ValueError("行情没有可用价格")
     return StockSnapshot(
         symbol=symbol,
         label=label,
-        price=float(price) if price is not None else (points[-1] if points else None),
-        change_percent=float(change) if change is not None else None,
+        price=price if price is not None else points[-1],
+        change_percent=change,
         points=points[-40:],
-        available=price is not None or bool(points),
+        available=True,
+        info=SnapshotInfo(
+            data_at=epoch_timestamp(meta.get("regularMarketTime")), state="fresh"
+        ),
     )
 
 
