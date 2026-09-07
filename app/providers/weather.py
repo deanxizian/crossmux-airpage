@@ -8,37 +8,7 @@ import httpx
 from app.config import Settings
 from app.models import ForecastDay, SnapshotInfo, WeatherSnapshot
 from app.validation import integer, number
-
-WEATHER_DESCRIPTIONS = {
-    0: "晴",
-    1: "晴间多云",
-    2: "多云",
-    3: "阴",
-    45: "雾",
-    48: "雾凇",
-    51: "毛毛雨",
-    53: "毛毛雨",
-    55: "毛毛雨",
-    56: "冻雨",
-    57: "冻雨",
-    61: "小雨",
-    63: "中雨",
-    65: "大雨",
-    66: "冻雨",
-    67: "冻雨",
-    71: "小雪",
-    73: "中雪",
-    75: "大雪",
-    77: "米雪",
-    80: "阵雨",
-    81: "阵雨",
-    82: "强阵雨",
-    85: "阵雪",
-    86: "强阵雪",
-    95: "雷雨",
-    96: "雷雨冰雹",
-    99: "强雷雨",
-}
+from app.weather_codes import weather_description
 
 
 def _daily_value(daily: dict[str, object], key: str, index: int) -> object | None:
@@ -105,7 +75,7 @@ async def fetch_weather(
                 low=low,
                 precipitation_probability=precipitation,
                 weather_code=forecast_code,
-                description=WEATHER_DESCRIPTIONS.get(forecast_code, "未知"),
+                description=weather_description(forecast_code),
             )
         )
     if not forecast:
