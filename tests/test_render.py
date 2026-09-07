@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
+import pytest
 from PIL import Image, ImageDraw
 
+from app.demo import demo_page
 from app.models import (
     ForecastDay,
     NewsItem,
@@ -19,10 +22,13 @@ from app.render import (
     MARKET_DIVIDER_Y,
     WEATHER_DIVIDER_Y,
     WHITE,
+    FontBook,
+    _draw_forecast,
     _draw_mini_weather_icon,
     _forecast_day_label,
     render_page,
 )
+from app.weather_codes import WEATHER_DESCRIPTIONS, weather_description
 
 
 def test_cloud_icon_has_a_continuous_closed_baseline() -> None:
@@ -46,6 +52,44 @@ def test_today_forecast_uses_an_explicit_label() -> None:
     assert _forecast_day_label(date(2026, 9, 5), today) == "周六"
 
 
+def test_weather_terms_and_probabilities_fit_five_columns(settings) -> None:
+    fonts = FontBook.load(settings)
+    draw = ImageDraw.Draw(Image.new("L", (528, 792), WHITE))
+    max_width = (512 - 16) / 5 - 12
+    for text in WEATHER_DESCRIPTIONS.values():
+        x0, _, x1, _ = draw.textbbox((0, 0), text, font=fonts.sans(14))
+        assert x1 - x0 <= max_width, text
+    for probability in (0, 9, 99, 100, "--"):
+        text = f"降水概率 {probability}%"
+        x0, _, x1, _ = draw.textbbox((0, 0), text, font=fonts.sans(12))
+        assert x1 - x0 <= max_width, text
+
+
+@pytest.mark.parametrize("probability", [0, 99, 100, None])
+def test_render_labels_precipitation_as_probability(settings, probability) -> None:
+    today = date(2026, 9, 7)
+    weather = WeatherSnapshot(
+        location="上海",
+        forecasts=[ForecastDay(today, 30, 24, probability, 53, "微雨")],
+        available=True,
+    )
+    draw = ImageDraw.Draw(Image.new("L", (528, 792), WHITE))
+    with patch.object(draw, "text", wraps=draw.text) as text:
+        _draw_forecast(draw, FontBook.load(settings), weather, 5, today)
+    expected = f"降水概率 {probability if probability is not None else '--'}%"
+    assert expected in [call.args[1] for call in text.call_args_list]
+
+
+def test_demo_uses_current_weather_terms(settings) -> None:
+    now = datetime(2026, 9, 7, 9, 41, tzinfo=ZoneInfo("Asia/Shanghai"))
+    weather = demo_page(settings, now).weather
+    assert all(
+        day.description == weather_description(day.weather_code)
+        for day in weather.forecasts
+    )
+    assert "微雨" in [day.description for day in weather.forecasts]
+
+
 def test_render_is_native_size_and_four_gray(settings) -> None:
     now = datetime(2026, 9, 4, 9, 41, tzinfo=ZoneInfo("Asia/Shanghai"))
     data = PageData(
@@ -53,11 +97,11 @@ def test_render_is_native_size_and_four_gray(settings) -> None:
         weather=WeatherSnapshot(
             location="上海",
             forecasts=[
-                ForecastDay(date(2026, 9, 4), 31, 20, 10, 2, "多云"),
-                ForecastDay(date(2026, 9, 5), 32, 23, 20, 2, "多云"),
+                ForecastDay(date(2026, 9, 4), 31, 20, 10, 2, "局部多云"),
+                ForecastDay(date(2026, 9, 5), 32, 23, 20, 2, "局部多云"),
                 ForecastDay(date(2026, 9, 6), 29, 21, 60, 61, "小雨"),
-                ForecastDay(date(2026, 9, 7), 31, 20, 10, 0, "晴"),
-                ForecastDay(date(2026, 9, 8), 30, 21, 20, 2, "多云"),
+                ForecastDay(date(2026, 9, 7), 31, 20, 10, 0, "晴朗无云"),
+                ForecastDay(date(2026, 9, 8), 30, 21, 20, 2, "局部多云"),
             ],
             available=True,
         ),

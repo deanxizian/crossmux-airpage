@@ -264,7 +264,7 @@ def _draw_forecast(
             else "--"
         )
         _draw_centered(
-            draw, center, 300, f"降水 {precipitation}%", fonts.sans(12), DARK
+            draw, center, 300, f"降水概率 {precipitation}%", fonts.sans(12), DARK
         )
 
     draw.line((12, WEATHER_DIVIDER_Y, 516, WEATHER_DIVIDER_Y), fill=BLACK, width=2)

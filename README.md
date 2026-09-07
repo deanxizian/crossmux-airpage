@@ -35,6 +35,10 @@ flowchart LR
 Docker 和 GitHub Actions 是两种独立运行方式。请只启用一种，避免设备被重复
 刷新。当前默认方案是 Docker 每分钟推送；GitHub 定时推送默认关闭。
 
+天气名称参考 Apple 官方简体中文用语，例如“微雨”“冻细雨”“局部多云”，
+数据源仍是 Open-Meteo，并保留雨雪强度分级。完整映射与降水概率含义见
+[天气术语](docs/weather-terms.md)。升级后已有缓存也会使用新名称，无需清空数据。
+
 ## Docker 运行
 
 要求 Docker Engine 和 Docker Compose：

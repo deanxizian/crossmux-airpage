@@ -15,12 +15,12 @@ from app.models import (
     StockSnapshot,
     WeatherSnapshot,
 )
+from app.weather_codes import weather_description
 
 
 def demo_page(settings: Settings, now: datetime) -> PageData:
     now = now.astimezone(ZoneInfo(settings.timezone))
-    codes = (2, 61, 3, 0, 2)
-    descriptions = ("多云", "小雨", "阴", "晴", "多云")
+    codes = (2, 53, 3, 0, 1)
     weather = WeatherSnapshot(
         location=f"{settings.weather_location}（示例）",
         forecasts=[
@@ -30,7 +30,7 @@ def demo_page(settings: Settings, now: datetime) -> PageData:
                 24 - i,
                 (20, 70, 30, 0, 10)[i],
                 codes[i],
-                descriptions[i],
+                weather_description(codes[i]),
             )
             for i in range(settings.weather_forecast_days)
         ],

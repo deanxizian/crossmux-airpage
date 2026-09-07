@@ -193,6 +193,41 @@ def test_restart_recovers_cache_without_persisting_credentials(setup) -> None:
     assert service.cache.path.stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.parametrize("stale", [False, True])
+def test_restart_updates_legacy_weather_terms_without_discarding_cache(
+    setup, stale
+) -> None:
+    service, api, clock = setup
+    collect(service)
+    payload = json.loads(service.cache.path.read_text())
+    snapshot = payload["entries"]["weather"]["snapshot"]
+    codes = [53, 56, 2, 3, 99]
+    old_labels = ["毛毛雨", "冻雨", "多云", "阴", "强雷雨"]
+    for day, code, label in zip(snapshot["forecasts"], codes, old_labels, strict=True):
+        day.update(weather_code=code, description=label)
+    service.cache.path.write_text(json.dumps(payload))
+    restarted = AirPageService(
+        service.settings, clock=clock, transport=service.transport
+    )
+    if stale:
+        api.failed = True
+        clock.advance(service.settings.weather_refresh_seconds)
+    page = collect(restarted)
+    assert page.weather.available
+    assert page.weather.info.state == ("stale" if stale else "fresh")
+    assert [day.weather_code for day in page.weather.forecasts] == codes
+    assert [day.description for day in page.weather.forecasts] == [
+        "微雨",
+        "冻细雨",
+        "局部多云",
+        "多云",
+        "雷暴伴雹",
+    ]
+    assert page.weather.info.fetched_at.isoformat() == snapshot["info"]["fetched_at"]
+    assert [day.high for day in page.weather.forecasts] == [31] * 5
+    assert api.calls["weather"] == (2 if stale else 1)
+
+
 def test_configuration_change_never_reuses_the_other_feed(setup) -> None:
     service, api, clock = setup
     collect(service)

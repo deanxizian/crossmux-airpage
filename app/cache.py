@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.storage import read_json, write_json
 from app.validation import integer, number, timestamp
+from app.weather_codes import weather_description
 
 Snapshot = WeatherSnapshot | StockSnapshot | NewsSnapshot
 
@@ -51,17 +52,21 @@ def _decode_snapshot(kind: str, value: dict[str, Any]) -> Snapshot:
     if info.fetched_at is None or value.get("available") is not True:
         raise ValueError("cache has no successful fetch")
     if kind == "weather":
-        forecasts = [
-            ForecastDay(
-                date.fromisoformat(item["date"]),
-                number(item["high"]),
-                number(item["low"]),
-                integer(item["precipitation_probability"], 0, 100),
-                integer(item["weather_code"], 0, 99),
-                _text(item["description"]),
+        forecasts = []
+        for item in value["forecasts"][:5]:
+            code = integer(item["weather_code"], 0, 99)
+            forecasts.append(
+                ForecastDay(
+                    date=date.fromisoformat(item["date"]),
+                    high=number(item["high"]),
+                    low=number(item["low"]),
+                    precipitation_probability=integer(
+                        item["precipitation_probability"], 0, 100
+                    ),
+                    weather_code=code,
+                    description=weather_description(code),
+                )
             )
-            for item in value["forecasts"][:5]
-        ]
         if not forecasts or any(
             day.high is not None and day.low is not None and day.high < day.low
             for day in forecasts
