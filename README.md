@@ -9,7 +9,7 @@
 ## 效果预览
 
 <p align="center">
-  <img src="docs/images/crossmux-airpage-preview.png" alt="CrossMux AirPage 信息页渲染效果" width="528">
+  <img src="docs/images/crossmux-airpage-preview.png" alt="CrossMux AirPage 设备外观渲染图，展示微雨、降水概率、新闻与 A 股行情" width="528">
 </p>
 
 上图是经过美化的外观展示图，不用于证明实时行情或设备刷新结果。
