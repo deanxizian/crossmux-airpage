@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from app.bmp import quantize_gray4
 from app.config import Settings
@@ -20,6 +20,8 @@ WEEKDAY_LONG = ("周一", "周二", "周三", "周四", "周五", "周六", "周
 HEADER_DIVIDER_Y = 88
 WEATHER_DIVIDER_Y = 323
 MARKET_DIVIDER_Y = 558
+WEATHER_ICON_TOP = 180
+WEATHER_ICON_SIZE = 64
 
 
 def _first_existing(candidates: list[str | None]) -> str | None:
@@ -97,6 +99,23 @@ def _draw_right(
 def _draw_mini_weather_icon(
     draw: ImageDraw.ImageDraw, center_x: float, top: int, code: int | None
 ) -> None:
+    # Center the complete visible symbol, including rays and precipitation, rather
+    # than aligning the unrelated drawing origins of the individual shapes.
+    symbol = Image.new("L", (80, 80), WHITE)
+    _draw_weather_symbol(ImageDraw.Draw(symbol), 40, 4, code)
+    mask = ImageOps.invert(symbol)
+    bounds = mask.getbbox()
+    if bounds is None:
+        return
+    mask = mask.crop(bounds)
+    left = round(center_x) - mask.width // 2
+    y = top + (WEATHER_ICON_SIZE - mask.height) // 2
+    draw.bitmap((left, y), mask, fill=BLACK)
+
+
+def _draw_weather_symbol(
+    draw: ImageDraw.ImageDraw, center_x: float, top: int, code: int | None
+) -> None:
     cx = round(center_x)
     rainy = code is not None and (51 <= code <= 67 or 80 <= code <= 82)
     thunder = code is not None and code >= 95
@@ -160,14 +179,16 @@ def _draw_mini_weather_icon(
     if thunder:
         draw.polygon(
             (
-                (cx + 2, top + 46),
-                (cx - 6, top + 58),
-                (cx, top + 57),
-                (cx - 3, top + 68),
-                (cx + 10, top + 52),
-                (cx + 4, top + 53),
+                (cx + 3, top + 44),
+                (cx - 8, top + 53),
+                (cx, top + 53),
+                (cx - 2, top + 61),
+                (cx + 10, top + 49),
+                (cx + 2, top + 49),
             ),
-            fill=BLACK,
+            fill=WHITE,
+            outline=BLACK,
+            width=1,
         )
     elif rainy:
         for offset in (-13, 1, 15):
@@ -249,7 +270,7 @@ def _draw_forecast(
             fonts.sans(11),
             DARK,
         )
-        _draw_mini_weather_icon(draw, center, 177, day.weather_code)
+        _draw_mini_weather_icon(draw, center, WEATHER_ICON_TOP, day.weather_code)
         _draw_centered(draw, center, 246, day.description, fonts.sans(14))
         _draw_centered(
             draw,
