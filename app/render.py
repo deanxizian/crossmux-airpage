@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
 from app.bmp import quantize_gray4
 from app.config import Settings
@@ -22,6 +22,7 @@ WEATHER_DIVIDER_Y = 323
 MARKET_DIVIDER_Y = 558
 WEATHER_ICON_TOP = 180
 WEATHER_ICON_SIZE = 64
+WEATHER_ICON_BODY_CENTER_Y = 26
 
 
 def _first_existing(candidates: list[str | None]) -> str | None:
@@ -99,34 +100,22 @@ def _draw_right(
 def _draw_mini_weather_icon(
     draw: ImageDraw.ImageDraw, center_x: float, top: int, code: int | None
 ) -> None:
-    # Center the complete visible symbol, including rays and precipitation, rather
-    # than aligning the unrelated drawing origins of the individual shapes.
-    symbol = Image.new("L", (80, 80), WHITE)
-    _draw_weather_symbol(ImageDraw.Draw(symbol), 40, 4, code)
-    mask = ImageOps.invert(symbol)
-    bounds = mask.getbbox()
-    if bounds is None:
-        return
-    mask = mask.crop(bounds)
-    left = round(center_x) - mask.width // 2
-    y = top + (WEATHER_ICON_SIZE - mask.height) // 2
-    draw.bitmap((left, y), mask, fill=BLACK)
-
-
-def _draw_weather_symbol(
-    draw: ImageDraw.ImageDraw, center_x: float, top: int, code: int | None
-) -> None:
+    # Anchor the sun/cloud body, not the complete glyph. Reserve the lower part
+    # of the slot for precipitation so it never shifts a cloud upward.
     cx = round(center_x)
+    cy = top + WEATHER_ICON_BODY_CENTER_Y
     rainy = code is not None and (51 <= code <= 67 or 80 <= code <= 82)
     thunder = code is not None and code >= 95
     snowy = code is not None and (71 <= code <= 77 or 85 <= code <= 86)
     cloudy = code is None or code in {2, 3, 45, 48} or rainy or snowy or thunder
 
     if code in {0, 1, 2}:
-        sun_x = cx - 10 if cloudy else cx
-        sun_y = top + 18
+        # Expose the partly cloudy sun to the left without lifting the cloud.
+        sun_x = cx - 17 if cloudy else cx
+        sun_y = cy - 4 if cloudy else cy
+        radius, ray_inner, ray_outer = (8, 10, 12) if cloudy else (9, 12, 16)
         draw.ellipse(
-            (sun_x - 10, sun_y - 10, sun_x + 10, sun_y + 10),
+            (sun_x - radius, sun_y - radius, sun_x + radius, sun_y + radius),
             outline=BLACK,
             width=2,
         )
@@ -134,78 +123,81 @@ def _draw_weather_symbol(
             radians = math.radians(angle)
             draw.line(
                 (
-                    sun_x + math.cos(radians) * 14,
-                    sun_y + math.sin(radians) * 14,
-                    sun_x + math.cos(radians) * 18,
-                    sun_y + math.sin(radians) * 18,
+                    sun_x + math.cos(radians) * ray_inner,
+                    sun_y + math.sin(radians) * ray_inner,
+                    sun_x + math.cos(radians) * ray_outer,
+                    sun_y + math.sin(radians) * ray_outer,
                 ),
                 fill=BLACK,
                 width=2,
             )
 
-    if cloudy:
-        cloud_outline = (
-            (cx - 20, top + 42),
-            (cx - 23, top + 40),
-            (cx - 25, top + 36),
-            (cx - 25, top + 32),
-            (cx - 23, top + 28),
-            (cx - 20, top + 25),
-            (cx - 16, top + 23),
-            (cx - 13, top + 23),
-            (cx - 10, top + 25),
-            (cx - 9, top + 20),
-            (cx - 6, top + 16),
-            (cx - 3, top + 13),
-            (cx + 1, top + 12),
-            (cx + 5, top + 13),
-            (cx + 9, top + 16),
-            (cx + 11, top + 20),
-            (cx + 13, top + 25),
-            (cx + 17, top + 24),
-            (cx + 21, top + 26),
-            (cx + 23, top + 29),
-            (cx + 25, top + 33),
-            (cx + 25, top + 37),
-            (cx + 23, top + 40),
-            (cx + 20, top + 42),
-            (cx - 20, top + 42),
-        )
-        draw.polygon(cloud_outline, fill=WHITE)
-        draw.line(cloud_outline, fill=BLACK, width=2, joint="curve")
-    elif code not in {0, 1, 2}:
-        draw.ellipse((cx - 15, top + 4, cx + 15, top + 34), outline=BLACK, width=2)
-
     if thunder:
+        # A narrow, upright bolt reads clearly at native size. The cloud masks
+        # its top four rows without covering the short central zigzag.
         draw.polygon(
             (
-                (cx + 3, top + 44),
-                (cx - 8, top + 53),
-                (cx, top + 53),
-                (cx - 2, top + 61),
-                (cx + 10, top + 49),
-                (cx + 2, top + 49),
+                (cx + 3, cy + 12),
+                (cx - 5, cy + 23),
+                (cx, cy + 23),
+                (cx - 2, cy + 32),
+                (cx + 6, cy + 20),
+                (cx + 1, cy + 20),
             ),
             fill=WHITE,
             outline=BLACK,
             width=1,
         )
-    elif rainy:
+
+    if cloudy:
+        cloud_outline = (
+            (cx - 20, cy + 15),
+            (cx - 23, cy + 13),
+            (cx - 25, cy + 9),
+            (cx - 25, cy + 5),
+            (cx - 23, cy + 1),
+            (cx - 20, cy - 2),
+            (cx - 16, cy - 4),
+            (cx - 13, cy - 4),
+            (cx - 10, cy - 2),
+            (cx - 9, cy - 7),
+            (cx - 6, cy - 11),
+            (cx - 3, cy - 14),
+            (cx + 1, cy - 15),
+            (cx + 5, cy - 14),
+            (cx + 9, cy - 11),
+            (cx + 11, cy - 7),
+            (cx + 13, cy - 2),
+            (cx + 17, cy - 3),
+            (cx + 21, cy - 1),
+            (cx + 23, cy + 2),
+            (cx + 25, cy + 6),
+            (cx + 25, cy + 10),
+            (cx + 23, cy + 13),
+            (cx + 20, cy + 15),
+            (cx - 20, cy + 15),
+        )
+        draw.polygon(cloud_outline, fill=WHITE)
+        draw.line(cloud_outline, fill=BLACK, width=2, joint="curve")
+    elif code not in {0, 1, 2}:
+        draw.ellipse((cx - 15, cy - 15, cx + 15, cy + 15), outline=BLACK, width=2)
+
+    if rainy:
         for offset in (-13, 1, 15):
             draw.line(
-                (cx + offset, top + 48, cx + offset - 3, top + 56),
+                (cx + offset, cy + 20, cx + offset - 3, cy + 28),
                 fill=DARK,
                 width=2,
             )
     elif snowy:
         for offset in (-13, 1, 15):
             draw.line(
-                (cx + offset - 3, top + 53, cx + offset + 3, top + 53),
+                (cx + offset - 3, cy + 25, cx + offset + 3, cy + 25),
                 fill=DARK,
                 width=1,
             )
             draw.line(
-                (cx + offset, top + 50, cx + offset, top + 56),
+                (cx + offset, cy + 22, cx + offset, cy + 28),
                 fill=DARK,
                 width=1,
             )
@@ -271,13 +263,21 @@ def _draw_forecast(
             DARK,
         )
         _draw_mini_weather_icon(draw, center, WEATHER_ICON_TOP, day.weather_code)
-        _draw_centered(draw, center, 246, day.description, fonts.sans(14))
-        _draw_centered(
-            draw,
-            center,
-            273,
+        # Center these text rows vertically so different font ascents do not
+        # consume the space below the larger lightning bolt.
+        draw.text(
+            (center, 261),
+            day.description,
+            font=fonts.sans(14),
+            fill=BLACK,
+            anchor="mm",
+        )
+        draw.text(
+            (center, 284),
             _forecast_temperature(day.high, day.low),
-            fonts.mono(14),
+            font=fonts.mono(14),
+            fill=BLACK,
+            anchor="mm",
         )
         precipitation = (
             str(day.precipitation_probability)
